@@ -1,13 +1,1 @@
-﻿/* Tailwind v4 entry */
-@import "tailwindcss";
-
-/* Optional: small global tweaks */
-:root { color-scheme: light; }
-
-html, body, #root { height: 100%; }
-
-body {
-  margin: 0;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
+﻿@import "tailwindcss";
