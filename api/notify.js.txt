@@ -1,0 +1,115 @@
+// Serverless Notifications for Vercel
+// Supports: channel = "email" (SendGrid) | "whatsapp" (Meta WhatsApp Cloud API)
+
+async function readJsonBody(req) {
+  return await new Promise((resolve) => {
+    let data = "";
+    req.on("data", (c) => (data += c));
+    req.on("end", () => {
+      try { resolve(JSON.parse(data || "{}")); } catch { resolve({}); }
+    });
+  });
+}
+
+function sendJSON(res, status, body) {
+  res.statusCode = status;
+  res.setHeader("Content-Type", "application/json");
+  // CORS (allow browser requests)
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.end(JSON.stringify(body));
+}
+
+export default async function handler(req, res) {
+  // CORS preflight
+  if (req.method === "OPTIONS") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.statusCode = 204; return res.end();
+  }
+
+  if (req.method !== "POST") {
+    return sendJSON(res, 405, { ok: false, error: "Method Not Allowed" });
+  }
+
+  const { channel, to, subject, message } = await readJsonBody(req);
+
+  if (!channel || !to || !subject || !message) {
+    return sendJSON(res, 400, { ok: false, error: "Missing fields (channel,to,subject,message)" });
+  }
+
+  try {
+    let result;
+
+    if (channel === "email") {
+      const SG_KEY = process.env.SENDGRID_API_KEY;
+      const FROM = process.env.SENDGRID_FROM; // e.g. no-reply@yourdomain.com
+
+      if (!SG_KEY || !FROM) {
+        return sendJSON(res, 500, { ok: false, error: "Email not configured (SENDGRID_API_KEY, SENDGRID_FROM)" });
+      }
+
+      const payload = {
+        personalizations: [{ to: [{ email: to }] }],
+        from: { email: FROM },
+        subject,
+        content: [{ type: "text/plain", value: message }],
+      };
+
+      const r = await fetch("https://api.sendgrid.com/v3/mail/send", {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${SG_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!r.ok) {
+        const txt = await r.text().catch(() => "");
+        throw new Error(`SendGrid ${r.status}: ${txt}`);
+      }
+
+      result = { ok: true, provider: "sendgrid" };
+    }
+
+    else if (channel === "whatsapp") {
+      const WA_TOKEN = process.env.META_WHATSAPP_TOKEN;     // Bearer token
+      const PHONE_ID = process.env.META_WHATSAPP_PHONE_ID; // WhatsApp Business phone number ID
+
+      if (!WA_TOKEN || !PHONE_ID) {
+        return sendJSON(res, 500, { ok: false, error: "WhatsApp not configured (META_WHATSAPP_TOKEN, META_WHATSAPP_PHONE_ID)" });
+      }
+
+      const url = `https://graph.facebook.com/v20.0/${PHONE_ID}/messages`;
+      const body = {
+        messaging_product: "whatsapp",
+        to,
+        type: "text",
+        text: { body: `${subject}\n\n${message}`.slice(0, 4000) }, // WA text limit safeguard
+      };
+
+      const r = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${WA_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!r.ok) {
+        const txt = await r.text().catch(() => "");
+        throw new Error(`WhatsApp ${r.status}: ${txt}`);
+      }
+
+      result = { ok: true, provider: "whatsapp" };
+    }
+
+    else {
+      return sendJSON(res, 400, { ok: false, error: "Unsupported channel. Use 'email' or 'whatsapp'." });
+    }
+
+    return sendJSON(res, 200, result);
+  } catch (err) {
+    console.error("[notify] error:", err);
+    return sendJSON(res, 500, { ok: false, error: "Send failed" });
+  }
+}

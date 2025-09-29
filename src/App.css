@@ -1,0 +1,151 @@
+function TaskForm({ value, onChange, onSave, onDelete, projects }) {
+  const set = (k, v) => onChange({ ...value, [k]: v, updatedAt: new Date().toISOString() });
+
+  const addAttachment = async (file) => {
+    if (!file) return;
+    const dataUrl = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = reject;
+      fr.readAsDataURL(file);
+    });
+    const att = { id: uid(), name: file.name, dataUrl };
+    set("attachments", [...(value.attachments || []), att]);
+  };
+
+  const removeAttachment = (id) =>
+    set("attachments", (value.attachments || []).filter((a) => a.id !== id));
+
+  const addComment = (author, text) => {
+    if (!text?.trim()) return;
+    const c = {
+      id: uid(),
+      author: author?.trim() || "",
+      text: text.trim(),
+      ts: new Date().toISOString(),
+    };
+    set("comments", [...(value.comments || []), c]);
+  };
+
+  const [commentAuthor, setCommentAuthor] = React.useState("");
+  const [commentText, setCommentText] = React.useState("");
+
+  return (
+    <div className="space-y-3">
+      <Text label="Title" value={value.title} onChange={(v) => set("title", v)} required />
+      <div className="grid grid-cols-2 gap-3">
+        <Select
+          label="Project"
+          value={value.projectId}
+          onChange={(v) => set("projectId", v)}
+          options={[{ value: "", label: "—" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+        />
+        <Text label="Assignee" value={value.assignee} onChange={(v) => set("assignee", v)} placeholder="Name or email" />
+        <Select
+          label="Priority"
+          value={value.priority}
+          onChange={(v) => set("priority", v)}
+          options={["Low", "Medium", "High"].map((x) => ({ value: x, label: x }))}
+        />
+        <Select
+          label="Status"
+          value={value.status}
+          onChange={(v) => set("status", v)}
+          options={["Todo", "In Progress", "Blocked", "Done"].map((x) => ({ value: x, label: x }))}
+        />
+        <Text label="Due Date" type="date" value={value.dueDate} onChange={(v) => set("dueDate", v)} />
+        <Number label="Estimate (hrs)" value={value.estimateHrs} onChange={(v) => set("estimateHrs", v)} />
+      </div>
+
+      {/* Attachments */}
+      <div className="pt-2">
+        <Label>Attachments</Label>
+        <div className="flex items-center gap-2 mb-2">
+          <label className="px-3 py-1.5 rounded-lg border cursor-pointer text-sm">
+            Add file
+            <input type="file" className="hidden" onChange={(e) => addAttachment(e.target.files?.[0])} />
+          </label>
+          <div className="text-xs text-slate-500">Stored in your browser (base64). Avoid very large files.</div>
+        </div>
+        <ul className="space-y-2 max-h-36 overflow-auto pr-2">
+          {(value.attachments || []).map((a) => (
+            <li key={a.id} className="flex items-center justify-between gap-2 text-sm">
+              <a href={a.dataUrl} download={a.name} className="underline truncate" title="Download">
+                {a.name}
+              </a>
+              <button className="text-rose-600 text-xs" onClick={() => removeAttachment(a.id)}>
+                remove
+              </button>
+            </li>
+          ))}
+          {!(value.attachments || []).length && <div className="text-xs text-slate-400">No files attached.</div>}
+        </ul>
+      </div>
+
+      {/* Comments */}
+      <div className="pt-2">
+        <Label>Comments</Label>
+        <div className="grid grid-cols-2 gap-2 mb-2">
+          <input
+            className="border rounded-lg px-2 py-1 text-sm"
+            placeholder="Your name (optional)"
+            value={commentAuthor}
+            onChange={(e) => setCommentAuthor(e.target.value)}
+          />
+          <div className="flex gap-2">
+            <input
+              className="flex-1 border rounded-lg px-2 py-1 text-sm"
+              placeholder="Write a comment"
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+            />
+            <button
+              className="px-3 py-1.5 rounded-lg border text-sm"
+              onClick={() => {
+                addComment(commentAuthor, commentText);
+                setCommentText("");
+              }}
+            >
+              Add
+            </button>
+          </div>
+        </div>
+        <ul className="space-y-2 max-h-40 overflow-auto pr-2">
+          {(value.comments || []).map((c) => (
+            <li key={c.id} className="text-sm">
+              <div className="text-[11px] text-slate-500">
+                {c.author || "Comment"} • {new Date(c.ts).toLocaleString()}
+              </div>
+              <div>{c.text}</div>
+            </li>
+          ))}
+          {!(value.comments || []).length && <div className="text-xs text-slate-400">No comments yet.</div>}
+        </ul>
+      </div>
+
+      <div className="flex items-center justify-between pt-2">
+        <div className="flex gap-2">
+          <button className="px-3 py-1.5 rounded-lg border" onClick={() => onSave(value)}>
+            Save
+          </button>
+          <button
+            className="px-3 py-1.5 rounded-lg border"
+            onClick={async () => {
+              const subject = `Task assigned: ${value.title}`;
+              const msg = `Task ${value.title} → ${value.assignee || "(unassigned)"}. Due ${value.dueDate || "TBD"}.`;
+              await sendNotification({ channel: "whatsapp", to: "+0000000000", subject, message: msg });
+              alert("WhatsApp notification (simulated). Replace /api/notify in code to enable real sending.");
+            }}
+          >
+            Save + Notify
+          </button>
+        </div>
+        {value.id && (
+          <button className="px-3 py-1.5 rounded-lg border text-rose-600" onClick={() => onDelete(value.id)}>
+            Delete Task
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
