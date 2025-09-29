@@ -1,0 +1,97 @@
+import { supabase } from "./lib/supabase";
+
+/* ---------- Auth ---------- */
+export async function signInWithEmail(email) {
+  const { data, error } = await supabase.auth.signInWithOtp({ email, options: { shouldCreateUser: true } });
+  if (error) throw error;
+  return data;
+}
+export async function getSession() {
+  const { data } = await supabase.auth.getSession();
+  return data.session;
+}
+export async function signOut() {
+  await supabase.auth.signOut();
+}
+
+/* ---------- Projects ---------- */
+export async function fetchProjects() {
+  const { data, error } = await supabase.from("projects").select("*").order("created_at", { ascending: true });
+  if (error) throw error;
+  return data;
+}
+export async function upsertProject(p) {
+  const payload = {
+    id: p.id || undefined,
+    user_id: (await getSession())?.user?.id,
+    name: p.name,
+    start_date: p.startDate || null,
+    end_date: p.endDate || null,
+    milestones_text: p.milestonesText || "",
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from("projects").upsert(payload).select("*").single();
+  if (error) throw error;
+  return data;
+}
+export async function deleteProject(id) {
+  const { error } = await supabase.from("projects").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/* ---------- Tasks ---------- */
+export async function fetchTasks() {
+  const { data, error } = await supabase.from("tasks").select("*").order("created_at", { ascending: true });
+  if (error) throw error;
+  return data.map(rowToTask);
+}
+export async function upsertTask(t) {
+  const payload = {
+    id: t.id || undefined,
+    user_id: (await getSession())?.user?.id,
+    project_id: t.projectId || null,
+    title: t.title,
+    assignee: t.assignee || null,
+    priority: t.priority || "Medium",
+    status: t.status || "Todo",
+    due_date: t.dueDate || null,
+    estimate_hrs: Number(t.estimateHrs || 0),
+    attachments: t.attachments || [],
+    comments: t.comments || [],
+    updated_at: new Date().toISOString(),
+  };
+  const { data, error } = await supabase.from("tasks").upsert(payload).select("*").single();
+  if (error) throw error;
+  return rowToTask(data);
+}
+export async function deleteTask(id) {
+  const { error } = await supabase.from("tasks").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/* ---------- Storage (attachments) ---------- */
+export async function uploadAttachment(file) {
+  const userId = (await getSession())?.user?.id;
+  const path = `${userId}/${Date.now()}_${file.name}`;
+  const { error } = await supabase.storage.from("attachments").upload(path, file, { upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from("attachments").getPublicUrl(path);
+  return { name: file.name, url: data.publicUrl, size: file.size };
+}
+
+/* ---------- Helpers ---------- */
+function rowToTask(r) {
+  return {
+    id: r.id,
+    projectId: r.project_id || "",
+    title: r.title,
+    assignee: r.assignee || "",
+    priority: r.priority || "Medium",
+    status: r.status || "Todo",
+    dueDate: r.due_date || "",
+    estimateHrs: r.estimate_hrs || 0,
+    attachments: r.attachments || [],
+    comments: r.comments || [],
+    updatedAt: r.updated_at || "",
+  };
+}
