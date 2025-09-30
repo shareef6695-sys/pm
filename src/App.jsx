@@ -4,9 +4,12 @@ import { createClient } from "@supabase/supabase-js";
 /* =============== Env & Supabase client =============== */
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
-});
+
+// only create client if both envs exist
+const supabase = (SUPABASE_URL && SUPABASE_ANON)
+  ? createClient(SUPABASE_URL, SUPABASE_ANON, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } })
+  : null;
+
 
 /* =============== Local persistence =============== */
 const LS_KEYS = { TASKS: "pm_tasks_v1", PROJECTS: "pm_projects_v1", NOTIFY: "pm_notify_v1" };
@@ -37,6 +40,14 @@ const EMPTY_TASK = {
   dueDate: "", estimateHrs: 0, attachments: [], comments: [], updatedAt: "",
 };
 const EMPTY_PROJECT = { id: "", name: "", startDate: "", endDate: "", milestonesText: "" };
+
+function upsertById(list, item, key = "id") {
+  const i = list.findIndex(x => x[key] === item[key]);
+  if (i === -1) return [...list, item];
+  const next = list.slice();
+  next[i] = item;
+  return next;
+}
 
 /* =============== Notifications (email/whatsapp via /api/notify) =============== */
 const ENV_NOTIFY_DEFAULTS = {
@@ -353,22 +364,91 @@ const parseMilestones = (text) =>
 const toDate = (d) => (d ? new Date(d + "T00:00:00") : null);
 const daysBetween = (a,b) => (!a||!b) ? 0 : Math.ceil(Math.abs(toDate(b)-toDate(a)) / (1000*60*60*24));
 
+/* ---- Structured Milestones ProjectForm ---- */
 function ProjectForm({ value, onChange, onSave, onDelete }) {
-  const set = (k, v) => onChange({ ...value, [k]: v });
+  const parseRows = React.useCallback((text) => {
+    return (text || "")
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const m = line.match(/^(\d{4}-\d{2}-\d{2})\s*-\s*(.*)$/);
+        return m ? { date: m[1], title: m[2] } : { date: "", title: line };
+      });
+  }, []);
+  const toText = React.useCallback((rows) => {
+    return rows
+      .filter((r) => r.date || r.title)
+      .map((r) => `${r.date || ""} - ${r.title || ""}`.trim())
+      .join("\n");
+  }, []);
+
+  const [rows, setRows] = React.useState(() => parseRows(value.milestonesText || ""));
+  React.useEffect(() => { setRows(parseRows(value.milestonesText || "")); }, [value.id, value.milestonesText, parseRows]);
+
+  const setField = (k, v) => onChange({ ...value, [k]: v });
+
+  const updateRow = (idx, patch) => {
+    const next = rows.slice();
+    next[idx] = { ...next[idx], ...patch };
+    setRows(next);
+    setField("milestonesText", toText(next));
+  };
+  const addRow = () => {
+    const next = [...rows, { date: "", title: "" }];
+    setRows(next);
+    setField("milestonesText", toText(next));
+  };
+  const removeRow = (idx) => {
+    const next = rows.filter((_, i) => i !== idx);
+    setRows(next);
+    setField("milestonesText", toText(next));
+  };
+
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
-        <Text label="Project Name" value={value.name} onChange={(v)=>set("name", v)} required />
-        <Text label="Start Date" type="date" value={value.startDate} onChange={(v)=>set("startDate", v)} />
-        <Text label="End Date" type="date" value={value.endDate} onChange={(v)=>set("endDate", v)} />
+        <Text label="Project Name" value={value.name} onChange={(v)=>setField("name", v)} required />
+        <Text label="Start Date" type="date" value={value.startDate} onChange={(v)=>setField("startDate", v)} />
+        <Text label="End Date" type="date" value={value.endDate} onChange={(v)=>setField("endDate", v)} />
       </div>
-      <div>
-        <Label>Milestones (one per line)</Label>
-        <p className="text-xs text-slate-500 mb-1"><code>YYYY-MM-DD - Milestone name</code></p>
-        <textarea className="w-full border rounded-xl px-3 py-2 text-sm" rows={5}
-          value={value.milestonesText} onChange={(e)=>set("milestonesText", e.target.value)}
-          placeholder={`${todayISO()} - Kickoff\n${todayISO()} - Requirements\n${todayISO()} - Go-Live`} />
+
+      <div className="space-y-2">
+        <Label>Milestones</Label>
+        <div className="text-xs text-slate-500 -mt-1">Each milestone has a <b>Date</b> and a <b>Title</b>. Add or remove rows as needed.</div>
+
+        <div className="space-y-2">
+          {rows.length === 0 && <div className="text-xs text-slate-400">No milestones yet. Click “Add milestone”.</div>}
+          {rows.map((r, i) => (
+            <div key={i} className="grid grid-cols-12 gap-2 items-end">
+              <div className="col-span-3">
+                <Label className="text-xs">Date</Label>
+                <input type="date" className="w-full border rounded-lg px-3 py-1.5 text-sm"
+                       value={r.date} onChange={(e)=>updateRow(i, { date: e.target.value })} />
+              </div>
+              <div className="col-span-8">
+                <Label className="text-xs">Title</Label>
+                <input type="text" className="w-full border rounded-lg px-3 py-1.5 text-sm"
+                       placeholder="e.g., Kickoff, Requirements sign-off, Go-live"
+                       value={r.title} onChange={(e)=>updateRow(i, { title: e.target.value })} />
+              </div>
+              <div className="col-span-1 flex justify-end">
+                <button type="button" className="px-3 py-1.5 rounded-lg border text-rose-600 text-sm"
+                        onClick={()=>removeRow(i)} title="Remove milestone">
+                  Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div>
+          <button type="button" className="px-3 py-1.5 rounded-lg border text-sm" onClick={addRow}>
+            + Add milestone
+          </button>
+        </div>
       </div>
+
       <div className="flex gap-2 pt-1">
         <button className="px-3 py-1.5 rounded-lg border" onClick={()=>onSave(value)}>Save</button>
         {value.id && <button className="px-3 py-1.5 rounded-lg border text-rose-600" onClick={()=>onDelete(value.id)}>Delete</button>}
@@ -376,6 +456,7 @@ function ProjectForm({ value, onChange, onSave, onDelete }) {
     </div>
   );
 }
+
 function ProjectsManager({ projects, setProjects, setTasks }) {
   const [draft, setDraft] = React.useState(null);
   const onCreate = () => setDraft({ ...EMPTY_PROJECT, id: uid() });
@@ -684,6 +765,60 @@ export default function App() {
       }
     });
     return () => sub.data.subscription.unsubscribe();
+  }, []);
+
+  // Realtime updates
+  React.useEffect(() => {
+    let channel;
+    (async () => {
+      const session = await supabase.auth.getSession();
+      const user = session.data.session?.user;
+      if (!user) return;
+
+      channel = supabase.channel("pm-realtime")
+        .on("postgres_changes", { event: "*", schema: "public", table: "projects", filter: `user_id=eq.${user.id}` },
+          (payload) => {
+            if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+              const p = {
+                id: payload.new.id,
+                name: payload.new.name,
+                startDate: payload.new.start_date || "",
+                endDate: payload.new.end_date || "",
+                milestonesText: payload.new.milestones_text || "",
+              };
+              setProjects(prev => upsertById(prev, p));
+            } else if (payload.eventType === "DELETE") {
+              const id = payload.old.id;
+              setProjects(prev => prev.filter(x => x.id !== id));
+              setTasks(prev => prev.map(t => (t.projectId === id ? { ...t, projectId: "" } : t)));
+            }
+          })
+        .on("postgres_changes", { event: "*", schema: "public", table: "tasks", filter: `user_id=eq.${user.id}` },
+          (payload) => {
+            if (payload.eventType === "INSERT" || payload.eventType === "UPDATE") {
+              const t = {
+                id: payload.new.id,
+                projectId: payload.new.project_id || "",
+                title: payload.new.title,
+                assignee: payload.new.assignee || "",
+                priority: payload.new.priority || "Medium",
+                status: payload.new.status || "Todo",
+                dueDate: payload.new.due_date || "",
+                estimateHrs: payload.new.estimate_hrs || 0,
+                attachments: payload.new.attachments || [],
+                comments: payload.new.comments || [],
+                updatedAt: payload.new.updated_at || "",
+              };
+              setTasks(prev => upsertById(prev, t));
+            } else if (payload.eventType === "DELETE") {
+              const id = payload.old.id;
+              setTasks(prev => prev.filter(x => x.id !== id));
+            }
+          })
+        .subscribe();
+    })();
+
+    return () => { if (channel) supabase.removeChannel(channel); };
   }, []);
 
   const saveTask = async (task) => {
