@@ -16,7 +16,7 @@ const LS = { TASKS: "pm_tasks_v1", PROJECTS: "pm_projects_v1", NOTIFY: "pm_notif
 const load = (k, f) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : f; } catch { return f; } };
 const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
-/* ================== Migration: add projectId to tasks ================== */
+/* ================== Migration (adds projectId to tasks) ================== */
 const SCHEMA_VERSION = 2;
 function runMigrations(tasks, projects) {
   const cur = Number(localStorage.getItem(LS.SCHEMA) || 1);
@@ -111,6 +111,24 @@ function TopBar() {
           <div className="font-semibold text-blue-700">Project Manager</div>
         </div>
         <span className="chip-live">Live</span>
+      </div>
+    </div>
+  );
+}
+
+/* ================== Modal ================== */
+function Modal({ title, children, onClose }) {
+  return (
+    <div className="fixed inset-0 z-50">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="absolute inset-0 flex items-start justify-center p-4 md:p-8">
+        <div className="w-full max-w-2xl bg-white rounded-2xl border shadow-lg">
+          <div className="flex items-center justify-between px-4 py-3 border-b">
+            <div className="font-semibold">{title}</div>
+            <button className="btn" onClick={onClose}>Close</button>
+          </div>
+          <div className="p-4">{children}</div>
+        </div>
       </div>
     </div>
   );
@@ -455,34 +473,73 @@ function Dashboard({ tasks, projects }) {
   );
 }
 
-/* ================== Calendar ================== */
+/* ================== Calendar (with add + drilldown) ================== */
 function startOfMonth(d){ const x=new Date(d); x.setDate(1); x.setHours(0,0,0,0); return x; }
 function endOfMonth(d){ const x=new Date(d); x.setMonth(x.getMonth()+1,0); x.setHours(23,59,59,999); return x; }
 function addDays(d,n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
 function sameDay(a,b){ return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
 function iso(d){ return d.toISOString().slice(0,10); }
 
-function Calendar({ tasks }) {
+function Calendar({ tasks, onCreateTaskForDate, onOpenTask }) {
   const [cursor, setCursor] = React.useState(()=>{ const t=new Date(); t.setDate(1); return t; });
   const monthStart = startOfMonth(cursor);
   const gridStart = addDays(monthStart, -((monthStart.getDay()+6)%7)); // Monday
+
   const tasksByDate = React.useMemo(()=> {
-    const m=new Map(); for(const t of tasks){ if(!t.dueDate) continue; const k=t.dueDate; (m.get(k)||m.set(k,[]).get(k)).push(t); }
+    const m=new Map();
+    for(const t of tasks){
+      if(!t.dueDate) continue;
+      const k=t.dueDate;
+      (m.get(k)||m.set(k,[]).get(k)).push(t);
+    }
     for(const [k,arr] of m) arr.sort((a,b)=>(b.priority==="High")-(a.priority==="High")||a.status.localeCompare(b.status));
     return m;
   },[tasks]);
+
   const weeks=[]; let day=gridStart;
-  for(let w=0; w<6; w++){ const cells=[]; for(let i=0;i<7;i++){
-    const inMonth = day.getMonth()===cursor.getMonth(); const key=iso(day); const list=tasksByDate.get(key)||[];
-    cells.push(<div key={i} className={`h-36 border p-2 rounded-lg overflow-hidden ${inMonth?"bg-white":"bg-slate-50 text-slate-400"}`}>
-      <div className="text-xs mb-1 flex items-center justify-between"><span className={`font-medium ${sameDay(day,new Date())?"text-blue-600":""}`}>{day.getDate()}</span>{list.length>0&&<span className="text-[11px] text-slate-500">{list.length}</span>}</div>
-      <div className="space-y-1 overflow-y-auto pr-1" style={{maxHeight:"2.9rem"}}>
-        {list.slice(0,3).map(t=>(<div key={t.id} className={`text-[11px] truncate px-1 py-0.5 rounded ${t.status==="Done"?"bg-emerald-100":"bg-blue-100"}`} title={`${t.title} · ${t.status} · ${t.priority}`}>{t.title}</div>))}
-        {list.length>3 && <div className="text-[11px] text-slate-500">+{list.length-3} more</div>}
-      </div>
-    </div>); day=addDays(day,1);
-  } weeks.push(<div key={w} className="grid grid-cols-7 gap-2">{cells}</div>); }
+  for(let w=0; w<6; w++){
+    const cells=[];
+    for(let i=0;i<7;i++){
+      const inMonth = day.getMonth()===cursor.getMonth();
+      const key=iso(day);
+      const list=tasksByDate.get(key)||[];
+      cells.push(
+        <div key={i} className={`h-36 border p-2 rounded-lg overflow-hidden relative group ${inMonth?"bg-white":"bg-slate-50 text-slate-400"}`}>
+          {/* date + add button */}
+          <div className="text-xs mb-1 flex items-center justify-between">
+            <span className={`font-medium ${sameDay(day,new Date())?"text-blue-600":""}`}>{day.getDate()}</span>
+            <button
+              title="Add task on this day"
+              className="opacity-0 group-hover:opacity-100 btn text-xs px-2 py-0.5"
+              onClick={()=>onCreateTaskForDate?.(key)}
+            >
+              +
+            </button>
+          </div>
+
+          {/* tasks list */}
+          <div className="space-y-1 overflow-y-auto pr-1" style={{maxHeight:"2.9rem"}}>
+            {list.slice(0,3).map(t=>(
+              <button
+                key={t.id}
+                title={`${t.title} · ${t.status} · ${t.priority}`}
+                className={`w-full text-left text-[11px] truncate px-1 py-0.5 rounded ${t.status==="Done"?"bg-emerald-100":"bg-blue-100"}`}
+                onClick={()=>onOpenTask?.(t)}
+              >
+                {t.title}
+              </button>
+            ))}
+            {list.length>3 && <div className="text-[11px] text-slate-500">+{list.length-3} more</div>}
+          </div>
+        </div>
+      );
+      day=addDays(day,1);
+    }
+    weeks.push(<div key={w} className="grid grid-cols-7 gap-2">{cells}</div>);
+  }
+
   const monthName = cursor.toLocaleString(undefined,{month:"long",year:"numeric"});
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -493,9 +550,13 @@ function Calendar({ tasks }) {
           <button className="btn" onClick={()=>setCursor(addDays(endOfMonth(cursor),1))}>Next</button>
         </div>
       </div>
-      <div className="grid grid-cols-7 gap-2 text-[11px] text-slate-500">{["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=><div key={d} className="px-2">{d}</div>)}</div>
+      <div className="grid grid-cols-7 gap-2 text-[11px] text-slate-500">
+        {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=><div key={d} className="px-2">{d}</div>)}
+      </div>
       <div className="space-y-2">{weeks}</div>
-      <div className="text-[11px] text-slate-500">Tip: tasks appear on their <b>Due Date</b>. Mark <i>Done</i> to show in green.</div>
+      <div className="text-[11px] text-slate-500">
+        Tip: click the <b>+</b> on a day to add a task; click a task chip to open details.
+      </div>
     </div>
   );
 }
@@ -566,7 +627,7 @@ function Settings() {
 
 /* ================== Root App ================== */
 export default function App() {
-  // Boot with migration
+  // Boot with migration (preserves all existing user data)
   const boot = React.useMemo(()=>{ const t0=load(LS.TASKS,[]); const p0=load(LS.PROJECTS,[]); const m=runMigrations(t0,p0); if(m.tasks!==t0) save(LS.TASKS,m.tasks); if(m.projects!==p0) save(LS.PROJECTS,m.projects); return m; },[]);
   const [tasks, setTasks] = React.useState(boot.tasks);
   const [projects, setProjects] = React.useState(boot.projects);
@@ -579,10 +640,15 @@ export default function App() {
   const [draft, setDraft] = React.useState({ ...EMPTY_TASK });
   const assignees = React.useMemo(()=> Array.from(new Set(tasks.map(t=>t.assignee).filter(Boolean))).sort(), [tasks]);
 
+  // Calendar drill-down modal state
+  const [calendarDraft, setCalendarDraft] = React.useState(null);
+  const createTaskForDate = (dateISO) => setCalendarDraft({ ...EMPTY_TASK, id: uid(), dueDate: dateISO, status:"Todo", priority:"Medium" });
+  const openTaskDetails = (task) => setCalendarDraft(task);
+
   // Cloud load on sign-in
   React.useEffect(()=>{ if(!supabase) return; const sub=supabase.auth.onAuthStateChange(async (_e,s)=>{ if(s?.user){ const [cp,ct]=await Promise.all([fetchProjects(), fetchTasks()]); setProjects(cp); setTasks(ct); } }); return ()=>sub.data.subscription.unsubscribe(); },[]);
 
-  // Realtime (optional; only if supabase exists)
+  // Realtime sync (if supabase available)
   React.useEffect(()=>{ if(!supabase) return; let channel; (async()=>{ const s=await supabase.auth.getSession(); const user=s.data.session?.user; if(!user) return;
     channel = supabase.channel("pm-realtime")
       .on("postgres_changes",{event:"*",schema:"public",table:"projects",filter:`user_id=eq.${user.id}`},(p)=>{ if(p.eventType==="DELETE"){ const id=p.old.id; setProjects(prev=>prev.filter(x=>x.id!==id)); setTasks(prev=>prev.map(t=>t.projectId===id?{...t,projectId:""}:t)); } else { const a=rowToProject(p.new); setProjects(prev=>upsertById(prev,a)); } })
@@ -632,7 +698,33 @@ export default function App() {
           </div>
 
           {tab==="dashboard" && <div className="card"><Dashboard tasks={tasks} projects={projects} /></div>}
-          {tab==="calendar" &&  <div className="card"><Calendar tasks={tasks} /></div>}
+
+          {tab==="calendar" && (
+            <div className="card">
+              <Calendar
+                tasks={tasks}
+                onCreateTaskForDate={createTaskForDate}
+                onOpenTask={openTaskDetails}
+              />
+            </div>
+          )}
+
+          {/* Calendar drilldown modal */}
+          {calendarDraft && (
+            <Modal
+              title={calendarDraft.id && tasks.find(t=>t.id===calendarDraft.id) ? "Edit Task" : "New Task"}
+              onClose={()=>setCalendarDraft(null)}
+            >
+              <TaskForm
+                value={calendarDraft}
+                onChange={setCalendarDraft}
+                projects={projects}
+                onComment={(t,c)=>notifyNewComment(t,c)}
+                onSave={(t)=>{ saveTask(t); setCalendarDraft(null); }}
+                onDelete={(id)=>{ deleteTask(id); setCalendarDraft(null); }}
+              />
+            </Modal>
+          )}
 
           {tab==="tasks" && (
             <>
