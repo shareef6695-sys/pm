@@ -19,11 +19,21 @@ const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } cat
 /* ================== Migration (adds projectId to tasks) ================== */
 const SCHEMA_VERSION = 2;
 function runMigrations(tasks, projects) {
+const SCHEMA_VERSION = 2;
+function runMigrations(tasks, projects) {
   const cur = Number(localStorage.getItem(LS.SCHEMA) || 1);
   if (cur >= SCHEMA_VERSION) return { tasks, projects };
-  const t2 = tasks.map(t => ({ projectId: "", ...t, projectId: typeof t.projectId === "string" ? t.projectId : "" }));
+
+  // v2: ensure every task has a string projectId (default "")
+  const t2 = tasks.map(t => ({
+    ...t,
+    projectId: typeof t.projectId === "string" ? t.projectId : "",
+  }));
+
   localStorage.setItem(LS.SCHEMA, String(SCHEMA_VERSION));
   return { tasks: t2, projects };
+}
+
 }
 
 /* ================== Utils / constants ================== */
