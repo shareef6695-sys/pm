@@ -76,7 +76,6 @@ const upsertById = (list, item, key = "id") => {
 };
 /* ================== Utils / constants ================== */
 const uid = () => Math.random().toString(36).slice(2, 9);
-
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
 const STATUSES = ["Todo", "In Progress", "Blocked", "Done"];
