@@ -59,21 +59,6 @@ function runMigrationsSafe(curTasks, curProjects) {
   return { tasks: safeTasks, projects: safeProjects };
 }
 
-  status: "Todo",
-  dueDate: "",
-  estimateHrs: 0,
-  attachments: [],
-  comments: [],
-  updatedAt: "",
-};
-const EMPTY_PROJECT = { id: "", name: "", startDate: "", endDate: "", milestonesText: "" };
-const upsertById = (list, item, key = "id") => {
-  const i = list.findIndex((x) => x[key] === item[key]);
-  if (i === -1) return [...list, item];
-  const n = list.slice();
-  n[i] = item;
-  return n;
-};
 /* ================== Utils / constants ================== */
 const uid = () => Math.random().toString(36).slice(2, 9);
 const todayISO = () => new Date().toISOString().slice(0, 10);
