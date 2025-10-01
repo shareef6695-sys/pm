@@ -40,6 +40,27 @@ function runMigrationsSafe(curTasks, curProjects) {
   const safeTasks = Array.isArray(curTasks) ? curTasks : [];
   const safeProjects = Array.isArray(curProjects) ? curProjects : [];
 
+  const raw = localStorage.getItem(LS.SCHEMA);
+  let schema = parseInt(raw ?? "1", 10);
+  if (isNaN(schema)) schema = 1;
+
+  if (schema < SCHEMA_VERSION) {
+    // v2: ensure every task has projectId as a string
+    const migratedTasks = safeTasks.map((t) => ({
+      ...t,
+      projectId: typeof t.projectId === "string" ? t.projectId : "",
+    }));
+    save(LS.TASKS, migratedTasks);
+    localStorage.setItem(LS.SCHEMA, String(SCHEMA_VERSION));
+    return { tasks: migratedTasks, projects: safeProjects };
+  }
+
+  return { tasks: safeTasks, projects: safeProjects };
+}
+
+  const safeTasks = Array.isArray(curTasks) ? curTasks : [];
+  const safeProjects = Array.isArray(curProjects) ? curProjects : [];
+
   let schema = Number(localStorage.getItem(LS.SCHEMA) || 1);
   if (!Number.isFinite(schema)) schema = 1;
 
