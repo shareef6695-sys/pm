@@ -36,6 +36,7 @@ const save = (k, v) => {
 
 /* ================== Schema migration (SAFE) ================== */
 const SCHEMA_VERSION = 2;
+
 function runMigrationsSafe(curTasks, curProjects) {
   const safeTasks = Array.isArray(curTasks) ? curTasks : [];
   const safeProjects = Array.isArray(curProjects) ? curProjects : [];
@@ -58,36 +59,6 @@ function runMigrationsSafe(curTasks, curProjects) {
   return { tasks: safeTasks, projects: safeProjects };
 }
 
-  const safeTasks = Array.isArray(curTasks) ? curTasks : [];
-  const safeProjects = Array.isArray(curProjects) ? curProjects : [];
-
-  let schema = Number(localStorage.getItem(LS.SCHEMA) || 1);
-  if (!Number.isFinite(schema)) schema = 1;
-
-  if (schema < SCHEMA_VERSION) {
-    // v2: ensure every task has projectId as a string
-    const migratedTasks = safeTasks.map((t) => ({
-      ...t,
-      projectId: typeof t.projectId === "string" ? t.projectId : "",
-    }));
-    save(LS.TASKS, migratedTasks);
-    localStorage.setItem(LS.SCHEMA, String(SCHEMA_VERSION));
-    return { tasks: migratedTasks, projects: safeProjects };
-  }
-
-  return { tasks: safeTasks, projects: safeProjects };
-}
-
-/* ================== Utils / constants ================== */
-const uid = () => Math.random().toString(36).slice(2, 9);
-const todayISO = () => new Date().toISOString().slice(0, 10);
-const STATUSES = ["Todo", "In Progress", "Blocked", "Done"];
-const EMPTY_TASK = {
-  id: "",
-  projectId: "",
-  title: "",
-  assignee: "",
-  priority: "Medium",
   status: "Todo",
   dueDate: "",
   estimateHrs: 0,
