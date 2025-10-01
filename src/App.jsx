@@ -17,6 +17,7 @@ const LS = {
   PROJECTS: "pm_projects_v1",
   NOTIFY: "pm_notify_v1",
   SCHEMA: "pm_schema_v",
+  MEMBERS: "pm_members_v1",
 };
 const load = (k, fallback) => {
   try {
@@ -87,6 +88,8 @@ const EMPTY_PROJECT = {
   milestonesText: ""
 };
 
+const EMPTY_MEMBER = { id: "", name: "", email: "", role: "Member" };
+
 const upsertById = (list, item, key = "id") => {
   const i = list.findIndex((x) => x[key] === item[key]);
   if (i === -1) return [...list, item];
@@ -124,9 +127,7 @@ const notifyTaskSaved = (t, isNew) =>
   notify({
     channel: "email",
     subject: isNew ? `New task: ${t.title}` : `Task updated: ${t.title}`,
-    message: `Status: ${t.status}\nAssignee: ${t.assignee || "Unassigned"}\nDue: ${
-      t.dueDate || "TBD"
-    }`,
+    message: `Status: ${t.status}\nAssignee: ${t.assignee || "Unassigned"}\nDue: ${t.dueDate || "TBD"}`,
   });
 const notifyStatusChange = (t, from, to) =>
   notify({
@@ -370,7 +371,7 @@ function AuthBar({ onSignedIn }) {
 }
 
 /* ================== Task Form ================== */
-function TaskForm({ value, onChange, onSave, onDelete, projects, onComment }) {
+function TaskForm({ value, onChange, onSave, onDelete, projects, onComment, members = [] }) {
   const set = (k, v) => onChange({ ...value, [k]: v, updatedAt: new Date().toISOString() });
 
   const addAttachment = async (file) => {
@@ -406,7 +407,21 @@ function TaskForm({ value, onChange, onSave, onDelete, projects, onComment }) {
           onChange={(v) => set("projectId", v)}
           options={[{ value: "", label: "—" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
         />
-        <Text label="Assignee" value={value.assignee} onChange={(v) => set("assignee", v)} placeholder="Name or email" />
+        <div>
+          <Label>Assignee</Label>
+          <select
+            className="w-full border rounded-lg px-3 py-1.5 text-sm"
+            value={value.assignee || ""}
+            onChange={(e) => set("assignee", e.target.value)}
+          >
+            <option value="">Unassigned</option>
+            {members.map((m) => (
+              <option key={m.id} value={m.name}>
+                {m.name} {m.role ? `– ${m.role}` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
         <Select label="Priority" value={value.priority || "Medium"} onChange={(v) => set("priority", v)} options={["Low", "Medium", "High"].map((x) => ({ value: x, label: x }))} />
         <Select label="Status" value={value.status || "Todo"} onChange={(v) => set("status", v)} options={STATUSES.map((x) => ({ value: x, label: x }))} />
         <Text label="Due Date" type="date" value={value.dueDate} onChange={(v) => set("dueDate", v)} />
@@ -614,9 +629,7 @@ function ProjectForm({ value, onChange, onSave, onDelete }) {
       </div>
       <div className="space-y-2">
         <Label>Milestones</Label>
-        <div className="text-xs text-slate-500 -mt-1">
-          Each milestone has a <b>Date</b> and a <b>Title</b>.
-        </div>
+        <div className="text-xs text-slate-500 -mt-1">Each milestone has a <b>Date</b> and a <b>Title</b>.</div>
         <div className="space-y-2">
           {rows.length === 0 && <div className="text-xs text-slate-400">No milestones yet. Click “Add milestone”.</div>}
           {rows.map((r, i) => (
@@ -630,26 +643,16 @@ function ProjectForm({ value, onChange, onSave, onDelete }) {
                 <input type="text" className="w-full border rounded-lg px-3 py-1.5 text-sm" value={r.title} placeholder="Kickoff / Go-live…" onChange={(e) => updateRow(i, { title: e.target.value })} />
               </div>
               <div className="col-span-1 flex justify-end">
-                <button className="btn text-rose-600" onClick={() => removeRow(i)}>
-                  Remove
-                </button>
+                <button className="btn text-rose-600" onClick={() => removeRow(i)}>Remove</button>
               </div>
             </div>
           ))}
         </div>
-        <button className="btn" onClick={addRow}>
-          + Add milestone
-        </button>
+        <button className="btn" onClick={addRow}>+ Add milestone</button>
       </div>
       <div className="flex gap-2 pt-1">
-        <button className="btn btn-primary" onClick={() => onSave(value)}>
-          Save
-        </button>
-        {value.id && (
-          <button className="btn text-rose-600" onClick={() => onDelete(value.id)}>
-            Delete
-          </button>
-        )}
+        <button className="btn btn-primary" onClick={() => onSave(value)}>Save</button>
+        {value.id && <button className="btn text-rose-600" onClick={() => onDelete(value.id)}>Delete</button>}
       </div>
     </div>
   );
@@ -664,9 +667,7 @@ function ProjectsManager({ projects, setProjects, setTasks }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Projects</h2>
-        <button className="btn" onClick={onCreate}>
-          New Project
-        </button>
+        <button className="btn" onClick={onCreate}>New Project</button>
       </div>
 
       {draft && (
@@ -706,17 +707,13 @@ function ProjectsManager({ projects, setProjects, setTasks }) {
                   {p.startDate || "?"} → {p.endDate || "?"} ({daysBetween(p.startDate, p.endDate)} days)
                 </div>
               </div>
-              <button className="btn" onClick={() => onEdit(p)}>
-                Edit
-              </button>
+              <button className="btn" onClick={() => onEdit(p)}>Edit</button>
             </div>
             <div className="mt-3">
               <div className="text-xs text-slate-500 mb-1">Milestones</div>
               <ul className="text-sm list-disc ml-5 space-y-1 max-h-28 overflow-auto pr-2">
                 {parseMilestones(p.milestonesText).map((m, i) => (
-                  <li key={i}>
-                    {m.date} — {m.title}
-                  </li>
+                  <li key={i}>{m.date} — {m.title}</li>
                 ))}
                 {!parseMilestones(p.milestonesText).length && <div className="text-xs text-slate-400">No milestones yet</div>}
               </ul>
@@ -967,15 +964,12 @@ function Calendar({ tasks = [], onCreateTaskForDate, onOpenTask }) {
       const list = tasksByDate.get(key) || [];
       cells.push(
         <div key={i} className={`h-36 border p-2 rounded-lg overflow-hidden relative group ${inMonth ? "bg-white" : "bg-slate-50 text-slate-400"}`}>
-          {/* date + add button */}
           <div className="text-xs mb-1 flex items-center justify-between">
             <span className={`font-medium ${sameDay(day, new Date()) ? "text-blue-600" : ""}`}>{day.getDate()}</span>
             <button title="Add task on this day" className="opacity-0 group-hover:opacity-100 btn text-xs px-2 py-0.5" onClick={() => onCreateTaskForDate?.(key)}>
               +
             </button>
           </div>
-
-          {/* tasks list */}
           <div className="space-y-1 overflow-y-auto pr-1" style={{ maxHeight: "2.9rem" }}>
             {list.slice(0, 3).map((t) => (
               <button
@@ -1007,30 +1001,78 @@ function Calendar({ tasks = [], onCreateTaskForDate, onOpenTask }) {
       <div className="flex items-center justify-between">
         <div className="text-xl font-semibold">{monthName}</div>
         <div className="flex gap-2">
-          <button className="btn" onClick={() => setCursor(addDays(startOfMonth(cursor), -1))}>
-            Prev
-          </button>
-          <button
-            className="btn"
-            onClick={() => setCursor(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}
-          >
-            Today
-          </button>
-          <button className="btn" onClick={() => setCursor(addDays(endOfMonth(cursor), 1))}>
-            Next
-          </button>
+          <button className="btn" onClick={() => setCursor(addDays(startOfMonth(cursor), -1))}>Prev</button>
+          <button className="btn" onClick={() => setCursor(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>Today</button>
+          <button className="btn" onClick={() => setCursor(addDays(endOfMonth(cursor), 1))}>Next</button>
         </div>
       </div>
       <div className="grid grid-cols-7 gap-2 text-[11px] text-slate-500">
         {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-          <div key={d} className="px-2">
-            {d}
-          </div>
+          <div key={d} className="px-2">{d}</div>
         ))}
       </div>
       <div className="space-y-2">{weeks}</div>
-      <div className="text-[11px] text-slate-500">
-        Tip: click the <b>+</b> on a day to add a task; click a task chip to open details.
+      <div className="text-[11px] text-slate-500">Tip: click the <b>+</b> on a day to add a task; click a task chip to open details.</div>
+    </div>
+  );
+}
+
+/* ================== Team Manager ================== */
+function TeamManager({ members, setMembers }) {
+  const [draft, setDraft] = React.useState(null);
+
+  const startNew = () => setDraft({ ...EMPTY_MEMBER, id: uid() });
+  const startEdit = (m) => setDraft(m);
+
+  const save = (m) => {
+    const nm = (m.name || "").trim();
+    if (!nm) return alert("Name is required");
+    setMembers((prev) => (prev.some((x) => x.id === m.id) ? prev.map((x) => (x.id === m.id ? m : x)) : [...prev, m]));
+    setDraft(null);
+  };
+  const remove = (id) => {
+    if (!confirm("Remove this member?")) return;
+    setMembers((prev) => prev.filter((x) => x.id !== id));
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold">Team</h2>
+        <button className="btn" onClick={startNew}>Add Member</button>
+      </div>
+
+      {draft && (
+        <div className="card space-y-3">
+          <div className="grid md:grid-cols-3 gap-3">
+            <Text label="Name" value={draft.name} onChange={(v) => setDraft({ ...draft, name: v })} />
+            <Text label="Email" value={draft.email} onChange={(v) => setDraft({ ...draft, email: v })} />
+            <Select
+              label="Role"
+              value={draft.role || "Member"}
+              onChange={(v) => setDraft({ ...draft, role: v })}
+              options={["Owner", "Manager", "Member"].map((r) => ({ value: r, label: r }))}
+            />
+          </div>
+          <div className="flex gap-2">
+            <button className="btn btn-primary" onClick={() => save(draft)}>Save</button>
+            {draft.id && <button className="btn text-rose-600" onClick={() => remove(draft.id)}>Remove</button>}
+            <button className="btn" onClick={() => setDraft(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+
+      <div className="grid md:grid-cols-2 gap-3">
+        {members.map((m) => (
+          <div key={m.id} className="card p-4 flex items-center justify-between">
+            <div>
+              <div className="font-medium">{m.name}</div>
+              <div className="text-xs text-slate-500">{m.email || "—"} · {m.role || "Member"}</div>
+            </div>
+            <button className="btn" onClick={() => startEdit(m)}>Edit</button>
+          </div>
+        ))}
+        {members.length === 0 && <div className="text-sm text-slate-500">No team members yet. Click “Add Member”.</div>}
       </div>
     </div>
   );
@@ -1052,6 +1094,7 @@ function Settings() {
     const payload = {
       pm_tasks_v1: JSON.parse(localStorage.getItem("pm_tasks_v1") || "[]"),
       pm_projects_v1: JSON.parse(localStorage.getItem("pm_projects_v1") || "[]"),
+      pm_members_v1: JSON.parse(localStorage.getItem("pm_members_v1") || "[]"),
       pm_notify_v1: JSON.parse(localStorage.getItem("pm_notify_v1") || "{}"),
       exportedAt: new Date().toISOString(),
     };
@@ -1073,6 +1116,7 @@ function Settings() {
           const d = JSON.parse(fr.result);
           if (d.pm_tasks_v1) localStorage.setItem("pm_tasks_v1", JSON.stringify(d.pm_tasks_v1));
           if (d.pm_projects_v1) localStorage.setItem("pm_projects_v1", JSON.stringify(d.pm_projects_v1));
+          if (d.pm_members_v1) localStorage.setItem("pm_members_v1", JSON.stringify(d.pm_members_v1));
           if (d.pm_notify_v1) localStorage.setItem("pm_notify_v1", JSON.stringify(d.pm_notify_v1));
           res(true);
         } catch (e) {
@@ -1098,23 +1142,15 @@ function Settings() {
           </div>
         </div>
         <div className="flex gap-2">
-          <button className="btn btn-primary" onClick={saveNotify}>
-            Save Settings
-          </button>
-          <button className="btn" onClick={testEmail}>
-            Send Test Email
-          </button>
-          <button className="btn" onClick={testWhatsApp}>
-            Send Test WhatsApp
-          </button>
+          <button className="btn btn-primary" onClick={saveNotify}>Save Settings</button>
+          <button className="btn" onClick={testEmail}>Send Test Email</button>
+          <button className="btn" onClick={testWhatsApp}>Send Test WhatsApp</button>
         </div>
 
         <div className="pt-2 border-t mt-2">
           <div className="text-sm font-semibold mb-2">Backup & Restore</div>
           <div className="flex flex-wrap items-center gap-2">
-            <button className="btn" onClick={exportJSON}>
-              Export JSON
-            </button>
+            <button className="btn" onClick={exportJSON}>Export JSON</button>
             <label className="btn cursor-pointer">
               Import JSON
               <input
@@ -1169,10 +1205,15 @@ export default function App() {
     const parsed = load(LS.PROJECTS, []);
     return Array.isArray(parsed) ? parsed : [];
   });
+  const [members, setMembers] = React.useState(() => {
+    const parsed = load(LS.MEMBERS, []);
+    return Array.isArray(parsed) ? parsed : [];
+  });
 
   // Persist on change
   React.useEffect(() => save(LS.TASKS, tasks || []), [tasks]);
   React.useEffect(() => save(LS.PROJECTS, projects || []), [projects]);
+  React.useEffect(() => save(LS.MEMBERS, members || []), [members]);
 
   // Run migration once after mount
   React.useEffect(() => {
@@ -1321,6 +1362,7 @@ export default function App() {
               ["calendar", "Calendar"],
               ["tasks", "Tasks"],
               ["projects", "Projects"],
+              ["team", "Team"],
               ["timeline", "Timeline"],
               ["settings", "Settings"],
             ].map(([id, label]) => (
@@ -1358,6 +1400,7 @@ export default function App() {
                 value={calendarDraft}
                 onChange={setCalendarDraft}
                 projects={projects}
+                members={members}
                 onComment={(t, c) => notifyNewComment(t, c)}
                 onSave={(t) => {
                   saveTask(t);
@@ -1375,7 +1418,7 @@ export default function App() {
             <>
               <div className="card">
                 <h1 className="text-2xl font-bold mb-4">Project & Task Manager</h1>
-                <TaskForm value={draft} onChange={setDraft} onSave={saveTask} onDelete={deleteTask} projects={projects} onComment={(t, c) => notifyNewComment(t, c)} />
+                <TaskForm value={draft} onChange={setDraft} onSave={saveTask} onDelete={deleteTask} projects={projects} members={members} onComment={(t, c) => notifyNewComment(t, c)} />
               </div>
 
               <div className="card space-y-4">
@@ -1385,50 +1428,30 @@ export default function App() {
                     <select className="border rounded-lg px-2 py-1 text-sm" value={fProject} onChange={(e) => setFProject(e.target.value)}>
                       <option value="">All Projects</option>
                       {projects.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name}
-                        </option>
+                        <option key={p.id} value={p.id}>{p.name}</option>
                       ))}
                     </select>
                     <select className="border rounded-lg px-2 py-1 text-sm" value={fAssignee} onChange={(e) => setFAssignee(e.target.value)}>
                       <option value="">All Assignees</option>
                       {assignees.map((a) => (
-                        <option key={a} value={a}>
-                          {a}
-                        </option>
+                        <option key={a} value={a}>{a}</option>
                       ))}
                     </select>
                     <select className="border rounded-lg px-2 py-1 text-sm" value={fPriority} onChange={(e) => setFPriority(e.target.value)}>
                       <option value="">All Priority</option>
                       {["Low", "Medium", "High"].map((p) => (
-                        <option key={p} value={p}>
-                          {p}
-                        </option>
+                        <option key={p} value={p}>{p}</option>
                       ))}
                     </select>
                     <select className="border rounded-lg px-2 py-1 text-sm" value={swimlaneBy} onChange={(e) => setSwimlaneBy(e.target.value)}>
                       {["None", "Project", "Assignee", "Priority"].map((x) => (
-                        <option key={x} value={x}>
-                          Swimlane: {x}
-                        </option>
+                        <option key={x} value={x}>Swimlane: {x}</option>
                       ))}
                     </select>
                   </div>
                   <div className="flex gap-2">
-                    <button className="btn btn-primary" onClick={() => setDraft({ ...EMPTY_TASK, status: "Todo", priority: "Medium" })}>
-                      New Task
-                    </button>
-                    <button
-                      className="btn"
-                      onClick={() => {
-                        setFProject("");
-                        setFAssignee("");
-                        setFPriority("");
-                        setQuery("");
-                      }}
-                    >
-                      Reset Filters
-                    </button>
+                    <button className="btn btn-primary" onClick={() => setDraft({ ...EMPTY_TASK, status: "Todo", priority: "Medium" })}>New Task</button>
+                    <button className="btn" onClick={() => { setFProject(""); setFAssignee(""); setFPriority(""); setQuery(""); }}>Reset Filters</button>
                   </div>
                 </div>
 
@@ -1440,6 +1463,12 @@ export default function App() {
           {tab === "projects" && (
             <div className="card">
               <ProjectsManager projects={projects} setProjects={setProjects} setTasks={setTasks} />
+            </div>
+          )}
+
+          {tab === "team" && (
+            <div className="card">
+              <TeamManager members={members} setMembers={setMembers} />
             </div>
           )}
 
